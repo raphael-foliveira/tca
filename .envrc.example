@@ -1,0 +1,7 @@
+
+export OPENAI_API_KEY="OPENAI_API_KEY"
+export DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres"
+export GOOSE_DRIVER="postgres"
+export GOOSE_DBSTRING="postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+export GOOSE_MIGRATION_DIR="db/migrations"
+
