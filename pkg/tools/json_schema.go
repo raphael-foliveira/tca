@@ -1,4 +1,4 @@
-package utils
+package tools
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
-func GetJsonSchema[T any](targetStruct T) (map[string]any, error) {
+func getJsonSchema[T any](targetStruct T) (map[string]any, error) {
 	targetStructName, err := getStructName(targetStruct)
 	if err != nil {
 		return nil, err

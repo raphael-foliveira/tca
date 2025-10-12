@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-
-	"github.com/raphael-foliveira/tca/pkg/utils"
 )
 
 type FunctionDefinitionParam struct {
@@ -46,7 +44,7 @@ func NewTool[T any](
 }
 
 func (t *Tool) ToFunctionDefinition() (FunctionDefinitionParam, error) {
-	schema, err := utils.GetJsonSchema(t.params)
+	schema, err := getJsonSchema(t.params)
 	if err != nil {
 		return FunctionDefinitionParam{}, err
 	}
