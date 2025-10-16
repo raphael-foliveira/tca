@@ -13,18 +13,17 @@ import (
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/option"
 	"github.com/raphael-foliveira/tca/pkg/agent"
-	"github.com/raphael-foliveira/tca/pkg/client"
 	"github.com/raphael-foliveira/tca/pkg/repository"
 	"github.com/raphael-foliveira/tca/pkg/service"
-	"github.com/raphael-foliveira/tca/pkg/summarizer"
 	"github.com/raphael-foliveira/tca/pkg/tools"
 )
 
 func main() {
 	openaiApiKey := getEnv("OPENAI_API_KEY", "")
-	openaiModel := getEnv("OPENAI_MODEL", "gpt-4o")
+	modelName := getEnv("OPENAI_MODEL", "gpt-4o")
 
 	openaiClient := openai.NewClient(option.WithAPIKey(openaiApiKey))
+	chatCompletionService := openaiClient.Chat.Completions
 	ctx := context.Background()
 
 	systemPrompt := "You are a helpful assistant that can answer questions and help with tasks by adding as much context as possible."
@@ -32,21 +31,24 @@ func main() {
 	readFileTool := tools.ReadFileTool()
 	getFileTreeTool := tools.GetFileTreeTool()
 
-	chatCompletionClient := client.NewOpenAIChatCompletionClient(openaiClient)
-
-	summarizerInstance := summarizer.NewSummarizer(
-		summarizer.SummarizerConfig{
-			ChatClient: chatCompletionClient,
-			Model:      openaiModel,
+	summarizerInstance := agent.NewSummarizer(
+		agent.SummarizerConfig{
+			ChatClient: &chatCompletionService,
+			Model:      modelName,
 		},
 	)
 
-	chatAgent := agent.NewAgent(
-		agent.AgentConfig{
-			ChatClient:   chatCompletionClient,
-			Model:        openaiModel,
+	toolHandler := tools.NewToolHandler([]*tools.Tool{
+		readFileTool,
+		getFileTreeTool,
+	})
+
+	chatAgent := agent.NewOpenai(
+		agent.OpenaiAgentConfig{
+			ChatClient:   &chatCompletionService,
+			Model:        modelName,
 			SystemPrompt: systemPrompt,
-			Tools:        []*tools.Tool{readFileTool, getFileTreeTool},
+			ToolHandler:  toolHandler,
 		},
 	)
 
@@ -93,7 +95,7 @@ func NewCommandLineChat(
 func (c *CommandLineChat) Run(ctx context.Context) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	sessionId := "19be545c-7eb5-42a2-a8e2-dfddc10f4764"
+	sessionId := "19be545c-7eb5-42a2-a8e2-dfddc10f4765"
 
 	for {
 		fmt.Print("\nYou: ")

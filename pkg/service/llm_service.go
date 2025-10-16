@@ -6,7 +6,6 @@ import (
 
 	"github.com/raphael-foliveira/tca/pkg/agent"
 	"github.com/raphael-foliveira/tca/pkg/repository"
-	"github.com/raphael-foliveira/tca/pkg/summarizer"
 )
 
 type LLMService interface {
@@ -27,13 +26,13 @@ type LLMService interface {
 type llmService struct {
 	agent                 agent.Agent
 	checkpointsRepository repository.CheckpointsRepository
-	summarizer            summarizer.Summarizer
+	summarizer            agent.Summarizer
 }
 
 func NewLLMService(
 	agent agent.Agent,
 	messagesRepository repository.CheckpointsRepository,
-	summarizer summarizer.Summarizer,
+	summarizer agent.Summarizer,
 ) LLMService {
 	return &llmService{
 		agent:                 agent,

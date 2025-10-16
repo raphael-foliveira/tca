@@ -4,13 +4,14 @@ A Go project for working with LLM tool calls and function calling capabilities. 
 
 ## Features
 
-- Agent-based architecture with tool calling support
+- Provider-specific agent architecture (OpenAI) with tool calling support
 - Streaming and non-streaming chat completions
 - Conversation history management with PostgreSQL
 - Context summarization for long conversations
 - Built-in file system tools (read files, get file tree)
-- Extensible tool system with JSON schema generation
-- OpenAI API integration
+- Extensible tool system with type-safe parameters and JSON schema generation
+- Tool handler for executing tool calls with support for extra tools
+- Direct OpenAI SDK integration (v2)
 
 ## Prerequisites
 
@@ -165,21 +166,30 @@ myTool := tools.NewTool(
 )
 ```
 
-### Configuring an Agent
+### Configuring an OpenAI Agent
 
 ```go
 import (
+    "github.com/openai/openai-go/v2"
+    "github.com/openai/openai-go/v2/option"
     "github.com/raphael-foliveira/tca/pkg/agent"
-    "github.com/raphael-foliveira/tca/pkg/client"
     "github.com/raphael-foliveira/tca/pkg/tools"
 )
 
-chatAgent := agent.NewAgent(
-    agent.AgentConfig{
-        ChatClient:   chatCompletionClient,
-        Model:        "gpt-4o",
+// Initialize OpenAI client
+openaiClient := openai.NewClient(option.WithAPIKey("your-api-key"))
+chatCompletionService := openaiClient.Chat.Completions
+
+// Create tool handler
+toolHandler := tools.NewToolHandler([]*tools.Tool{tool1, tool2})
+
+// Create agent
+chatAgent := agent.NewOpenai(
+    agent.OpenaiAgentConfig{
+        ChatClient:   chatCompletionService,
+        Model:        openai.ChatModelGPT4o,
         SystemPrompt: "You are a helpful assistant.",
-        Tools:        []*tools.Tool{tool1, tool2},
+        ToolHandler:  toolHandler,
     },
 )
 ```
@@ -189,7 +199,7 @@ chatAgent := agent.NewAgent(
 See `.envrc.example` for all available environment variables:
 
 - `OPENAI_API_KEY` - Your OpenAI API key (required)
-- `OPENAI_MODEL` - Model to use (default: gpt-4o)
+- OPENAI_MODEL - OpenAI model to use (default: gpt-4o)
 - `DATABASE_URL` - PostgreSQL connection string
 - `GOOSE_DRIVER` - Database driver for goose (postgres)
 - `GOOSE_DBSTRING` - Database connection string for goose
