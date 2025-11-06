@@ -19,7 +19,7 @@ type LLMService interface {
 		ctx context.Context,
 		sessionID string,
 		newMessage string,
-		onChunk func(content string),
+		onChunk func(content string) error,
 	) error
 }
 
@@ -67,7 +67,7 @@ func (s *llmService) InvokeStream(
 	ctx context.Context,
 	sessionID string,
 	newMessage string,
-	onChunk func(content string),
+	onChunk func(content string) error,
 ) error {
 	checkpoint, err := s.checkpointsRepository.GetLatestBySessionID(ctx, sessionID)
 	if err != nil {

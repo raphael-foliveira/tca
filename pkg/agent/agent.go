@@ -20,7 +20,7 @@ type Agent interface {
 		ctx context.Context,
 		checkpoint models.Checkpoint,
 		userMessage string,
-		onContent func(string),
+		onContent func(string) error,
 		tools ...*tools.Tool,
 	) (models.Checkpoint, error)
 }

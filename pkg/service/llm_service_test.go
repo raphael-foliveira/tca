@@ -60,16 +60,19 @@ func TestLLMServiceInvokeStream(t *testing.T) {
 
 	agent := mocks.NewMockAgent(t)
 	agent.EXPECT().InvokeStream(mock.Anything, baseCheckpoint, "hello", mock.Anything).
-		RunAndReturn(func(ctx context.Context, checkpoint models.Checkpoint, msg string, onChunk func(string), tools ...*tools.Tool) (models.Checkpoint, error) {
-			onChunk("chunk-data")
+		RunAndReturn(func(ctx context.Context, checkpoint models.Checkpoint, msg string, onChunk func(string) error, tools ...*tools.Tool) (models.Checkpoint, error) {
+			if err := onChunk("chunk-data"); err != nil {
+				return models.Checkpoint{}, err
+			}
 			return finalCheckpoint, nil
 		})
 
 	service := service.NewLLMService(agent, repo, summarizer)
 
 	var collected string
-	err := service.InvokeStream(context.Background(), "session", "hello", func(content string) {
+	err := service.InvokeStream(context.Background(), "session", "hello", func(content string) error {
 		collected += content
+		return nil
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "chunk-data", collected)

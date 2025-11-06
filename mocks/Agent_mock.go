@@ -127,7 +127,7 @@ func (_c *MockAgent_Invoke_Call) RunAndReturn(run func(ctx context.Context, chec
 }
 
 // InvokeStream provides a mock function for the type MockAgent
-func (_mock *MockAgent) InvokeStream(ctx context.Context, checkpoint models.Checkpoint, userMessage string, onContent func(string), tools1 ...*tools.Tool) (models.Checkpoint, error) {
+func (_mock *MockAgent) InvokeStream(ctx context.Context, checkpoint models.Checkpoint, userMessage string, onContent func(string) error, tools1 ...*tools.Tool) (models.Checkpoint, error) {
 	var tmpRet mock.Arguments
 	if len(tools1) > 0 {
 		tmpRet = _mock.Called(ctx, checkpoint, userMessage, onContent, tools1)
@@ -142,15 +142,15 @@ func (_mock *MockAgent) InvokeStream(ctx context.Context, checkpoint models.Chec
 
 	var r0 models.Checkpoint
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Checkpoint, string, func(string), ...*tools.Tool) (models.Checkpoint, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Checkpoint, string, func(string) error, ...*tools.Tool) (models.Checkpoint, error)); ok {
 		return returnFunc(ctx, checkpoint, userMessage, onContent, tools1...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Checkpoint, string, func(string), ...*tools.Tool) models.Checkpoint); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Checkpoint, string, func(string) error, ...*tools.Tool) models.Checkpoint); ok {
 		r0 = returnFunc(ctx, checkpoint, userMessage, onContent, tools1...)
 	} else {
 		r0 = ret.Get(0).(models.Checkpoint)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, models.Checkpoint, string, func(string), ...*tools.Tool) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, models.Checkpoint, string, func(string) error, ...*tools.Tool) error); ok {
 		r1 = returnFunc(ctx, checkpoint, userMessage, onContent, tools1...)
 	} else {
 		r1 = ret.Error(1)
@@ -167,14 +167,14 @@ type MockAgent_InvokeStream_Call struct {
 //   - ctx context.Context
 //   - checkpoint models.Checkpoint
 //   - userMessage string
-//   - onContent func(string)
+//   - onContent func(string) error
 //   - tools1 ...*tools.Tool
 func (_e *MockAgent_Expecter) InvokeStream(ctx interface{}, checkpoint interface{}, userMessage interface{}, onContent interface{}, tools1 ...interface{}) *MockAgent_InvokeStream_Call {
 	return &MockAgent_InvokeStream_Call{Call: _e.mock.On("InvokeStream",
 		append([]interface{}{ctx, checkpoint, userMessage, onContent}, tools1...)...)}
 }
 
-func (_c *MockAgent_InvokeStream_Call) Run(run func(ctx context.Context, checkpoint models.Checkpoint, userMessage string, onContent func(string), tools1 ...*tools.Tool)) *MockAgent_InvokeStream_Call {
+func (_c *MockAgent_InvokeStream_Call) Run(run func(ctx context.Context, checkpoint models.Checkpoint, userMessage string, onContent func(string) error, tools1 ...*tools.Tool)) *MockAgent_InvokeStream_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -188,9 +188,9 @@ func (_c *MockAgent_InvokeStream_Call) Run(run func(ctx context.Context, checkpo
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 func(string)
+		var arg3 func(string) error
 		if args[3] != nil {
-			arg3 = args[3].(func(string))
+			arg3 = args[3].(func(string) error)
 		}
 		var arg4 []*tools.Tool
 		var variadicArgs []*tools.Tool
@@ -214,7 +214,7 @@ func (_c *MockAgent_InvokeStream_Call) Return(checkpoint1 models.Checkpoint, err
 	return _c
 }
 
-func (_c *MockAgent_InvokeStream_Call) RunAndReturn(run func(ctx context.Context, checkpoint models.Checkpoint, userMessage string, onContent func(string), tools1 ...*tools.Tool) (models.Checkpoint, error)) *MockAgent_InvokeStream_Call {
+func (_c *MockAgent_InvokeStream_Call) RunAndReturn(run func(ctx context.Context, checkpoint models.Checkpoint, userMessage string, onContent func(string) error, tools1 ...*tools.Tool) (models.Checkpoint, error)) *MockAgent_InvokeStream_Call {
 	_c.Call.Return(run)
 	return _c
 }

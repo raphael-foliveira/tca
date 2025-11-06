@@ -114,8 +114,9 @@ func (c *CommandLineChat) Run(ctx context.Context) error {
 			ctx,
 			sessionId,
 			userMessage,
-			func(content string) {
+			func(content string) error {
 				fmt.Print(content)
+				return nil
 			},
 		)
 		if err != nil {

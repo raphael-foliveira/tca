@@ -107,7 +107,7 @@ func (a *openaiAgent) InvokeStream(
 	ctx context.Context,
 	checkpoint models.Checkpoint,
 	userMessage string,
-	onContent func(string),
+	onContent func(string) error,
 	extraTools ...*tools.Tool,
 ) (models.Checkpoint, error) {
 	context := utils.MapMany(append(checkpoint.Context, models.ContextMsg{
@@ -136,7 +136,9 @@ func (a *openaiAgent) InvokeStream(
 				acc.AddChunk(chunk)
 
 				if len(chunk.Choices) > 0 {
-					onContent(chunk.Choices[0].Delta.Content)
+					if err := onContent(chunk.Choices[0].Delta.Content); err != nil {
+						return nil, fmt.Errorf("failed to handle content: %w", err)
+					}
 				}
 			}
 			if err := stream.Err(); err != nil {

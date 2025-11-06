@@ -110,7 +110,7 @@ func (_c *MockLLMService_Invoke_Call) RunAndReturn(run func(ctx context.Context,
 }
 
 // InvokeStream provides a mock function for the type MockLLMService
-func (_mock *MockLLMService) InvokeStream(ctx context.Context, sessionID string, newMessage string, onChunk func(content string)) error {
+func (_mock *MockLLMService) InvokeStream(ctx context.Context, sessionID string, newMessage string, onChunk func(content string) error) error {
 	ret := _mock.Called(ctx, sessionID, newMessage, onChunk)
 
 	if len(ret) == 0 {
@@ -118,7 +118,7 @@ func (_mock *MockLLMService) InvokeStream(ctx context.Context, sessionID string,
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, func(content string)) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, func(content string) error) error); ok {
 		r0 = returnFunc(ctx, sessionID, newMessage, onChunk)
 	} else {
 		r0 = ret.Error(0)
@@ -135,12 +135,12 @@ type MockLLMService_InvokeStream_Call struct {
 //   - ctx context.Context
 //   - sessionID string
 //   - newMessage string
-//   - onChunk func(content string)
+//   - onChunk func(content string) error
 func (_e *MockLLMService_Expecter) InvokeStream(ctx interface{}, sessionID interface{}, newMessage interface{}, onChunk interface{}) *MockLLMService_InvokeStream_Call {
 	return &MockLLMService_InvokeStream_Call{Call: _e.mock.On("InvokeStream", ctx, sessionID, newMessage, onChunk)}
 }
 
-func (_c *MockLLMService_InvokeStream_Call) Run(run func(ctx context.Context, sessionID string, newMessage string, onChunk func(content string))) *MockLLMService_InvokeStream_Call {
+func (_c *MockLLMService_InvokeStream_Call) Run(run func(ctx context.Context, sessionID string, newMessage string, onChunk func(content string) error)) *MockLLMService_InvokeStream_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -154,9 +154,9 @@ func (_c *MockLLMService_InvokeStream_Call) Run(run func(ctx context.Context, se
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 func(content string)
+		var arg3 func(content string) error
 		if args[3] != nil {
-			arg3 = args[3].(func(content string))
+			arg3 = args[3].(func(content string) error)
 		}
 		run(
 			arg0,
@@ -173,7 +173,7 @@ func (_c *MockLLMService_InvokeStream_Call) Return(err error) *MockLLMService_In
 	return _c
 }
 
-func (_c *MockLLMService_InvokeStream_Call) RunAndReturn(run func(ctx context.Context, sessionID string, newMessage string, onChunk func(content string)) error) *MockLLMService_InvokeStream_Call {
+func (_c *MockLLMService_InvokeStream_Call) RunAndReturn(run func(ctx context.Context, sessionID string, newMessage string, onChunk func(content string) error) error) *MockLLMService_InvokeStream_Call {
 	_c.Call.Return(run)
 	return _c
 }
