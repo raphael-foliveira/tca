@@ -4,309 +4,189 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 
-	"github.com/openai/openai-go/v2"
-	"github.com/openai/openai-go/v2/packages/param"
 	"github.com/raphael-foliveira/tca/pkg/models"
 	"github.com/raphael-foliveira/tca/pkg/tools"
-	"github.com/raphael-foliveira/tca/pkg/utils"
 )
 
-type openaiAgent struct {
-	completionClient *openai.ChatCompletionService
-	toolHandler      *tools.ToolHandler
-	model            openai.ChatModel
+type chatAgent struct {
+	completionClient ChatCompletionClient
+	tools            []*tools.Tool
 	systemPrompt     string
 }
 
-type OpenaiAgentConfig struct {
-	ChatClient   *openai.ChatCompletionService
-	Model        openai.ChatModel
+type AgentConfig struct {
+	ChatClient   ChatCompletionClient
 	SystemPrompt string
-	ToolHandler  *tools.ToolHandler
+	Tools        []*tools.Tool
 }
 
-func NewOpenai(config OpenaiAgentConfig) Agent {
-	return &openaiAgent{
+func NewAgent(config AgentConfig) Agent {
+	return &chatAgent{
 		completionClient: config.ChatClient,
-		toolHandler:      config.ToolHandler,
-		model:            config.Model,
+		tools:            config.Tools,
 		systemPrompt:     config.SystemPrompt,
 	}
 }
 
-func (a *openaiAgent) Invoke(
+func (a *chatAgent) Invoke(
 	ctx context.Context,
 	checkpoint models.Checkpoint,
 	userMessage string,
 	extraTools ...*tools.Tool,
 ) (models.Checkpoint, error) {
-	context := utils.MapMany(append(checkpoint.Context, models.ContextMsg{
+	messages := append(checkpoint.Context, models.ContextMsg{
 		Role:    models.MessageRoleUser,
 		Content: userMessage,
-	}), toOpenAIMessageParam)
+	})
+
+	if a.systemPrompt != "" {
+		messages = append([]models.ContextMsg{
+			{
+				Role:    models.MessageRoleSystem,
+				Content: a.systemPrompt,
+			},
+		}, messages...)
+	}
 
 	for range 10 {
-		completion, err := a.completionClient.New(
-			ctx,
-			openai.ChatCompletionNewParams{
-				Model:    a.model,
-				Messages: prependOpenaiMessage(context, a.systemPrompt),
-				Tools: utils.MapMany(
-					append(a.toolHandler.Tools(), extraTools...),
-					toOpenAIToolParam,
-				),
-			},
-		)
-		if len(completion.Choices) == 0 {
-			return models.Checkpoint{}, ErrNoResponse
+		req := ChatCompletionRequest{
+			Messages: messages,
+			Tools:    append(a.tools, extraTools...),
 		}
+
+		completion, err := a.completionClient.Complete(ctx, req)
 		if err != nil {
 			return models.Checkpoint{}, err
 		}
 
-		msg := completion.Choices[0].Message
-		context = append(context, msg.ToParam())
+		messages = append(messages, completion.Message)
 
-		if len(msg.ToolCalls) == 0 {
+		if len(completion.Message.ToolCalls) == 0 {
 			return models.Checkpoint{
 				SessionID:    checkpoint.SessionID,
-				Context:      utils.MapMany(context, fromOpenAIMessageParam),
+				Context:      messages,
 				Prompt:       userMessage,
-				Response:     msg.Content,
-				InputTokens:  completion.Usage.PromptTokens,
-				OutputTokens: completion.Usage.CompletionTokens,
+				Response:     completion.Message.Content,
+				InputTokens:  completion.InputTokens,
+				OutputTokens: completion.OutputTokens,
 			}, nil
 		}
 
-		toolResults, err := a.toolHandler.ExecuteCalls(
+		toolResults, err := a.executeCalls(
 			ctx,
-			utils.MapMany(msg.ToolCalls, fromOpenAIToolCall),
+			completion.Message.ToolCalls,
 			extraTools...,
 		)
 		if err != nil {
 			return models.Checkpoint{}, err
 		}
 
-		context = append(context, utils.MapMany(toolResults, toOpenAIMessageParam)...)
+		messages = append(messages, toolResults...)
 	}
 	return models.Checkpoint{}, errors.New("failed to get final response after 10 retries")
 }
 
-func fromOpenAIToolCall(tc openai.ChatCompletionMessageToolCallUnion) models.ToolCall {
-	return models.ToolCall{
-		ID:        tc.ID,
-		Name:      tc.Function.Name,
-		Arguments: tc.Function.Arguments,
+func (a *chatAgent) executeCalls(
+	ctx context.Context,
+	toolCalls []models.ToolCall,
+	extraTools ...*tools.Tool,
+) ([]models.ContextMsg, error) {
+	results := []models.ContextMsg{}
+
+	for _, toolCall := range toolCalls {
+		tool := a.findToolByName(toolCall.Name, extraTools...)
+		if tool == nil {
+			return nil, fmt.Errorf("tool not found: %s", toolCall.Name)
+		}
+
+		result, err := tool.Run(ctx, toolCall.Arguments)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, models.ContextMsg{
+			Role:       models.MessageRoleTool,
+			Content:    result,
+			ToolCallID: toolCall.ID,
+		})
 	}
+
+	return results, nil
 }
 
-func (a *openaiAgent) InvokeStream(
+func (a *chatAgent) findToolByName(name string, extraTools ...*tools.Tool) *tools.Tool {
+	for _, tool := range append(a.tools, extraTools...) {
+		if tool.GetName() == name {
+			return tool
+		}
+	}
+	return nil
+}
+
+func (a *chatAgent) InvokeStream(
 	ctx context.Context,
 	checkpoint models.Checkpoint,
 	userMessage string,
 	onContent func(string) error,
 	extraTools ...*tools.Tool,
 ) (models.Checkpoint, error) {
-	context := utils.MapMany(append(checkpoint.Context, models.ContextMsg{
+	messages := append(checkpoint.Context, models.ContextMsg{
 		Role:    models.MessageRoleUser,
 		Content: userMessage,
-	}), toOpenAIMessageParam)
+	})
+
+	if a.systemPrompt != "" {
+		messages = append([]models.ContextMsg{
+			{
+				Role:    models.MessageRoleSystem,
+				Content: a.systemPrompt,
+			},
+		}, messages...)
+	}
 
 	for range 10 {
-		finalCheckpoint, err := func() (*models.Checkpoint, error) {
-			stream := a.completionClient.NewStreaming(
-				ctx,
-				openai.ChatCompletionNewParams{
-					Model:    a.model,
-					Messages: prependOpenaiMessage(context, a.systemPrompt),
-					Tools: utils.MapMany(
-						append(a.toolHandler.Tools(), extraTools...),
-						toOpenAIToolParam,
-					),
-				},
-			)
-			defer stream.Close()
+		req := ChatCompletionRequest{
+			Messages: messages,
+			Tools:    append(a.tools, extraTools...),
+		}
 
-			acc := openai.ChatCompletionAccumulator{}
-			for stream.Next() {
-				chunk := stream.Current()
-				acc.AddChunk(chunk)
-
-				if len(chunk.Choices) > 0 {
-					if err := onContent(chunk.Choices[0].Delta.Content); err != nil {
-						return nil, fmt.Errorf("failed to handle content: %w", err)
-					}
-				}
-			}
-			if err := stream.Err(); err != nil {
-				return nil, err
-			}
-
-			if len(acc.Choices) == 0 {
-				return nil, ErrNoResponse
-			}
-
-			msg := acc.Choices[0].Message
-			if msg.Refusal != "" && msg.Content == "" && len(msg.ToolCalls) == 0 {
-				return nil, fmt.Errorf("refusal: %s", msg.Refusal)
-			}
-
-			if msg.Content == "" && len(msg.ToolCalls) == 0 {
-				return nil, ErrNoResponse
-			}
-
-			context = append(context, msg.ToParam())
-
-			if len(msg.ToolCalls) == 0 {
-				return &models.Checkpoint{
-					SessionID:    checkpoint.SessionID,
-					Context:      utils.MapMany(context, fromOpenAIMessageParam),
-					Prompt:       userMessage,
-					Response:     msg.Content,
-					InputTokens:  acc.Usage.PromptTokens,
-					OutputTokens: acc.Usage.CompletionTokens,
-				}, nil
-			}
-
-			toolResults, err := a.toolHandler.ExecuteCalls(
-				ctx,
-				utils.MapMany(msg.ToolCalls, fromOpenAIToolCall),
-				extraTools...,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			context = append(context, utils.MapMany(toolResults, toOpenAIMessageParam)...)
-			return nil, nil
-		}()
+		completion, err := a.completionClient.CompleteStreaming(ctx, req, onContent)
 		if err != nil {
 			return models.Checkpoint{}, err
 		}
-		if finalCheckpoint != nil {
-			return *finalCheckpoint, nil
+
+		messages = append(messages, completion.Message)
+
+		if len(completion.Message.ToolCalls) == 0 {
+			return models.Checkpoint{
+				SessionID:    checkpoint.SessionID,
+				Context:      messages,
+				Prompt:       userMessage,
+				Response:     completion.Message.Content,
+				InputTokens:  completion.InputTokens,
+				OutputTokens: completion.OutputTokens,
+			}, nil
 		}
+
+		toolResults, err := a.executeCalls(
+			ctx,
+			completion.Message.ToolCalls,
+			extraTools...,
+		)
+		if err != nil {
+			return models.Checkpoint{}, err
+		}
+
+		messages = append(messages, toolResults...)
 	}
 
 	return models.Checkpoint{}, errors.New("failed to get final response after 10 retries")
 }
 
-func prependOpenaiMessage(messages []openai.ChatCompletionMessageParamUnion, message string) []openai.ChatCompletionMessageParamUnion {
-	if message == "" {
-		return messages
-	}
-	return append(
-		[]openai.ChatCompletionMessageParamUnion{openai.SystemMessage(message)},
-		messages...,
-	)
-}
-
-func toOpenAIToolParam(t *tools.Tool) openai.ChatCompletionToolUnionParam {
-	def, err := t.GetDefinition()
-	if err != nil {
-		log.Printf("error getting tool definition: %v\n", err)
-	}
-	return openai.ChatCompletionToolUnionParam{
-		OfFunction: &openai.ChatCompletionFunctionToolParam{
-			Function: toOpenAIFunctionDefinitionParam(def),
-		},
-	}
-}
-
-func fromOpenAIMessageParam(msg openai.ChatCompletionMessageParamUnion) models.ContextMsg {
-	if !param.IsOmitted(msg.OfAssistant) {
-		contextMsg := models.ContextMsg{
-			Role: models.MessageRoleAssistant,
-		}
-		content := msg.OfAssistant.Content
-		if !param.IsOmitted(content.OfString) {
-			contextMsg.Content = msg.OfAssistant.Content.OfString.Value
-		}
-		if len(msg.OfAssistant.ToolCalls) > 0 {
-			toolCalls := make([]models.ToolCall, 0, len(msg.OfAssistant.ToolCalls))
-			for _, tc := range msg.OfAssistant.ToolCalls {
-				if !param.IsOmitted(tc.OfFunction) {
-					toolCalls = append(toolCalls, models.ToolCall{
-						ID:        tc.OfFunction.ID,
-						Name:      tc.OfFunction.Function.Name,
-						Arguments: tc.OfFunction.Function.Arguments,
-					})
-				}
-			}
-			contextMsg.ToolCalls = toolCalls
-		}
-		return contextMsg
-	}
-	if !param.IsOmitted(msg.OfUser) {
-		return models.ContextMsg{
-			Role:    models.MessageRoleUser,
-			Content: msg.OfUser.Content.OfString.Value,
-		}
-	}
-	if !param.IsOmitted(msg.OfSystem) {
-		return models.ContextMsg{
-			Role:    models.MessageRoleSystem,
-			Content: msg.OfSystem.Content.OfString.Value,
-		}
-	}
-	if !param.IsOmitted(msg.OfTool) {
-		return models.ContextMsg{
-			Role:       models.MessageRoleTool,
-			Content:    msg.OfTool.Content.OfString.Value,
-			ToolCallID: msg.OfTool.ToolCallID,
-		}
-	}
-	return models.ContextMsg{}
-}
-
-func toOpenAIMessageParam(msg models.ContextMsg) openai.ChatCompletionMessageParamUnion {
-	switch msg.Role {
-	case models.MessageRoleTool:
-		return openai.ToolMessage(msg.Content, msg.ToolCallID)
-	case models.MessageRoleUser:
-		return openai.UserMessage(msg.Content)
-	case models.MessageRoleAssistant:
-		assistantMessage := openai.AssistantMessage(msg.Content)
-		if len(msg.ToolCalls) > 0 {
-			assistantMessage.OfAssistant.ToolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
-			for i, tc := range msg.ToolCalls {
-				assistantMessage.OfAssistant.ToolCalls[i] = toOpenAIToolCall(tc)
-			}
-		}
-		return assistantMessage
-	case models.MessageRoleSystem:
-		return openai.SystemMessage(msg.Content)
-	default:
-		return openai.ChatCompletionMessageParamUnion{}
-	}
-}
-
-func toOpenAIToolCall(tc models.ToolCall) openai.ChatCompletionMessageToolCallUnionParam {
-	return openai.ChatCompletionMessageToolCallUnionParam{
-		OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-			ID: tc.ID,
-			Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-				Arguments: tc.Arguments,
-				Name:      tc.Name,
-			},
-		},
-	}
-}
-
-func toOpenAIFunctionDefinitionParam(def tools.FunctionDefinitionParam) openai.FunctionDefinitionParam {
-	return openai.FunctionDefinitionParam{
-		Name:        def.Name,
-		Description: openai.String(def.Description),
-		Parameters:  def.Parameters,
-	}
-}
-
 type openaiSummarizer struct {
-	chatClient                *openai.ChatCompletionService
-	model                     openai.ChatModel
+	chatClient                ChatCompletionClient
 	tokensBeforeSummarization int64
 	maxSummaryLength          int64
 	summaryPrompt             string
@@ -314,8 +194,7 @@ type openaiSummarizer struct {
 }
 
 type SummarizerConfig struct {
-	ChatClient                *openai.ChatCompletionService
-	Model                     openai.ChatModel
+	ChatClient                ChatCompletionClient
 	TokensBeforeSummarization int64
 	MaxSummaryLength          int64
 	SummaryPrompt             string
@@ -347,7 +226,6 @@ func NewSummarizer(config SummarizerConfig) Summarizer {
 	config.applyDefaults()
 	return &openaiSummarizer{
 		chatClient:                config.ChatClient,
-		model:                     config.Model,
 		tokensBeforeSummarization: config.TokensBeforeSummarization,
 		maxSummaryLength:          config.MaxSummaryLength,
 		summaryPrompt:             config.SummaryPrompt,
@@ -393,26 +271,17 @@ func (s *openaiSummarizer) Summarize(
 		},
 	)
 
-	completion, err := s.chatClient.New(
-		ctx, openai.ChatCompletionNewParams{
-			Model:    s.model,
-			Messages: utils.MapMany(concatenatedMessages, toOpenAIMessageParam),
-		},
-	)
+	req := ChatCompletionRequest{
+		Messages: concatenatedMessages,
+		Tools:    []*tools.Tool{},
+	}
+
+	completion, err := s.chatClient.Complete(ctx, req)
 	if err != nil {
 		return models.Checkpoint{}, err
 	}
 
-	if len(completion.Choices) == 0 {
-		return models.Checkpoint{}, errors.New("no response from summarizer")
-	}
-
-	msg := completion.Choices[0].Message
-	newSummary := models.ContextMsg{
-		Role:    models.MessageRoleAssistant,
-		Content: msg.Content,
-	}
-
+	newSummary := completion.Message
 	newContext := append([]models.ContextMsg{newSummary}, messagesToKeep...)
 
 	newCheckpoint := models.Checkpoint{
@@ -420,8 +289,8 @@ func (s *openaiSummarizer) Summarize(
 		Context:      newContext,
 		Prompt:       prompt,
 		Response:     newSummary.Content,
-		InputTokens:  completion.Usage.PromptTokens,
-		OutputTokens: completion.Usage.CompletionTokens,
+		InputTokens:  completion.InputTokens,
+		OutputTokens: completion.OutputTokens,
 		IsSummary:    true,
 	}
 	return newCheckpoint, nil

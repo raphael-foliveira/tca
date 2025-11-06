@@ -31,24 +31,26 @@ func main() {
 	readFileTool := tools.ReadFileTool()
 	getFileTreeTool := tools.GetFileTreeTool()
 
+	// Create the chat completion client abstraction
+	chatCompletionClient := agent.NewOpenAIChatCompletionClient(
+		&chatCompletionService,
+		openai.ChatModel(modelName),
+	)
+
 	summarizerInstance := agent.NewSummarizer(
 		agent.SummarizerConfig{
-			ChatClient: &chatCompletionService,
-			Model:      modelName,
+			ChatClient: chatCompletionClient,
 		},
 	)
 
-	toolHandler := tools.NewToolHandler([]*tools.Tool{
-		readFileTool,
-		getFileTreeTool,
-	})
-
-	chatAgent := agent.NewOpenai(
-		agent.OpenaiAgentConfig{
-			ChatClient:   &chatCompletionService,
-			Model:        modelName,
+	chatAgent := agent.NewAgent(
+		agent.AgentConfig{
+			ChatClient:   chatCompletionClient,
 			SystemPrompt: systemPrompt,
-			ToolHandler:  toolHandler,
+			Tools: []*tools.Tool{
+				readFileTool,
+				getFileTreeTool,
+			},
 		},
 	)
 
@@ -110,16 +112,15 @@ func (c *CommandLineChat) Run(ctx context.Context) error {
 		}
 
 		fmt.Print("Assistant: ")
-		err = c.llmService.InvokeStream(
+		if err := c.llmService.InvokeStream(
 			ctx,
 			sessionId,
 			userMessage,
 			func(content string) error {
-				fmt.Print(content)
-				return nil
+				_, err := fmt.Print(content)
+				return err
 			},
-		)
-		if err != nil {
+		); err != nil {
 			fmt.Println()
 			return fmt.Errorf("failed to invoke LLM service: %w", err)
 		}

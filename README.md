@@ -10,7 +10,7 @@ A Go project for working with LLM tool calls and function calling capabilities. 
 - Context summarization for long conversations
 - Built-in file system tools (read files, get file tree)
 - Extensible tool system with type-safe parameters and JSON schema generation
-- Tool handler for executing tool calls with support for extra tools
+- Built-in tool execution with support for extra tools
 - Direct OpenAI SDK integration (v2)
 
 ## Prerequisites
@@ -180,16 +180,18 @@ import (
 openaiClient := openai.NewClient(option.WithAPIKey("your-api-key"))
 chatCompletionService := openaiClient.Chat.Completions
 
-// Create tool handler
-toolHandler := tools.NewToolHandler([]*tools.Tool{tool1, tool2})
+// Create the chat completion client abstraction
+chatCompletionClient := agent.NewOpenAIChatCompletionClient(
+    &chatCompletionService,
+    openai.ChatModelGPT4o,
+)
 
-// Create agent
-chatAgent := agent.NewOpenai(
-    agent.OpenaiAgentConfig{
-        ChatClient:   chatCompletionService,
-        Model:        openai.ChatModelGPT4o,
+// Create agent with tools
+chatAgent := agent.NewAgent(
+    agent.AgentConfig{
+        ChatClient:   chatCompletionClient,
         SystemPrompt: "You are a helpful assistant.",
-        ToolHandler:  toolHandler,
+        Tools:        []*tools.Tool{tool1, tool2},
     },
 )
 ```
